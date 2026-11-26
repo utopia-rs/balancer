@@ -1,11 +1,8 @@
 # Utopia Balancer
 
-> [!IMPORTANT]
-> This repository is a read-only mirror of [`crates/utopia/balancer`](https://github.com/appwrite/appwrite/tree/main/crates/utopia/balancer) in [appwrite/appwrite](https://github.com/appwrite/appwrite). Development happens there — please open issues and pull requests against appwrite/appwrite.
-
 [![Discord](https://img.shields.io/discord/564160730845151244?label=discord)](https://discord.gg/GSeTUeA)
 
-Choosing between endpoints: options with state, filters, the First, Last, Random and RoundRobin algorithms, and groups of balancers tried in order.
+Choosing between endpoints: options with state, filters, and the First, Last, Random and RoundRobin algorithms.
 
 This library is maintained by the [Appwrite team](https://appwrite.io).
 
@@ -13,7 +10,7 @@ This library is maintained by the [Appwrite team](https://appwrite.io).
 
 ```toml
 [dependencies]
-utopia-balancer = { git = "https://github.com/utopia-rs/balancer" }
+utopia-balancer = { git = "https://github.com/appwrite/appwrite" }
 ```
 
 A balancer picks one endpoint out of many: a worker for the next job, a region for the next request. You give it options, filters that rule out the options that cannot serve right now, and an algorithm that chooses among the rest. Options can be any type; `Candidate` is a ready-made one holding named values such as a hostname or a CPU load. This guide covers the common tasks.
@@ -58,32 +55,6 @@ balancer.add_filter(|c| c.get("cpu").is_some_and(|v| v.to_double() < 50.0));
 assert_eq!(balancer.run()?.and_then(|c| c.get("hostname")), Some(&"worker-3".into()));
 ```
 
-## Fall back when nothing qualifies
-
-A `Group` tries its balancers in order and returns the first option one of them chooses: prefer idle workers, then any online one, then anything.
-
-```rust
-use utopia_balancer::{Balancer, Candidate, First, Group};
-
-let options = [
-    Candidate::from([("dc", "fra-1".into()), ("cpu", 91.into()), ("online", false.into())]),
-    Candidate::from([("dc", "lon-1".into()), ("cpu", 87.into()), ("online", true.into())]),
-];
-
-let mut idle = Balancer::new(First);
-idle.add_filter(|c: &Candidate| c.get("cpu").is_some_and(|v| v.to_double() < 80.0));
-let mut online = Balancer::new(First);
-online.add_filter(|c: &Candidate| c.get("online").is_some_and(|v| v.truthy()));
-for option in &options {
-    idle.add_option(option.clone());
-    online.add_option(option.clone());
-}
-
-let mut group = Group::new(None);
-group.add(idle).add(online);
-assert_eq!(group.run()?.and_then(|c| c.get("dc")), Some(&"lon-1".into()));
-```
-
 ## Reproduce random choices
 
 `Random` picks uniformly with PHP's Mersenne Twister. Seed it to replay a sequence in a test: `Random::seeded(7)` picks what PHP picks after `mt_srand(7)`.
@@ -124,6 +95,42 @@ balancer
 
 assert_eq!(balancer.run()?.map(|u| u.url), Some("http://10.0.0.2"));
 ```
+
+## Contributing
+
+Development happens in [appwrite/appwrite](https://github.com/appwrite/appwrite), where this crate lives at [`crates/utopia/balancer`](https://github.com/appwrite/appwrite/tree/main/crates/utopia/balancer). Run these commands from a checkout of it. The [contributing guide](https://utopia-docs.appwrite.network/contributing) covers each step.
+
+### Test
+
+```bash
+cargo test -p utopia-balancer
+cargo clippy -p utopia-balancer --all-targets -- -D warnings
+cargo fmt --all --check
+```
+
+### Compare with PHP
+
+Replay the results PHP recorded for every case against Rust, without PHP:
+
+```bash
+COMPAT_LIB=balancer cargo test -p compat
+```
+
+Run every case on both runtimes, fuzz both with generated inputs, then run the whole conversion check. These need the dev stack (`docker compose up -d`):
+
+```bash
+bin/compat run balancer
+bin/compat fuzz balancer
+bin/compat check balancer
+```
+
+### Benchmark
+
+```bash
+bin/compat bench balancer
+```
+
+This times every benchmark on PHP and on a release build of Rust, both in containers on the dev stack. It fails if Rust is slower. Add `--write` to record the run in [`tests/compat/balancer/bench.json`](https://github.com/appwrite/appwrite/blob/main/tests/compat/balancer/bench.json). Run it on a quiet machine, one library at a time.
 
 ## License
 
